@@ -474,9 +474,16 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                 return;
             }
 
+            /**
+             * AbstractUnsafe 作为 AbstractChannel的内部类，这类是获取AbstractChannel的eventLoop
+             * 这里的AbstractChannel的是NiOServerSocketChannel
+             */
             AbstractChannel.this.eventLoop = eventLoop;
 
             if (eventLoop.inEventLoop()) {
+                /**
+                 * 当前连接的channel关联的eventLoop的线程来执行这个方法
+                 */
                 register0(promise);
             } else {
                 try {

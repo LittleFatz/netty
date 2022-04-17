@@ -76,6 +76,9 @@ public final class EchoServer {
              });
 
             // Start the server.
+            /**
+             * b.bind(PORT) 返回 ChannelPromise
+             */
             ChannelFuture f = b.bind(PORT).sync();
 
             // Wait until the server socket is closed.
