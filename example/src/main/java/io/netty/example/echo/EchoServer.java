@@ -57,6 +57,11 @@ public final class EchoServer {
             b.group(bossGroup, workerGroup)
              .channel(NioServerSocketChannel.class)
              .option(ChannelOption.SO_BACKLOG, 100)
+            /**
+             * //https://blog.csdn.net/November22/article/details/115313711
+             * ServerBootstrap#handler添加的handler实例链，只在客户端连接创建的时候调用（ServerChannel负责创建子Channel，对应点3），在创建完成之后，不会再调用。
+             * ServerBootstrap#childHandler添加的handler实例链，对于Channel的所有事件都会被调用触发。
+              */
              .handler(new LoggingHandler(LogLevel.INFO))
              .childHandler(new ChannelInitializer<SocketChannel>() {
                  @Override
