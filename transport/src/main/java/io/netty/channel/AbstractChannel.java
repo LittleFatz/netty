@@ -476,10 +476,15 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
 
             /**
              * AbstractUnsafe 作为 AbstractChannel的内部类，这类是获取AbstractChannel的eventLoop
-             * 这里的AbstractChannel的是NiOServerSocketChannel
+             * 这里的 AbstractChannel 的是 NiOServerSocketChannel
+             * 绑定 channel 和 eventLoop
              */
             AbstractChannel.this.eventLoop = eventLoop;
 
+            /**
+             * 创建server：第一次进来的时候由于还未绑定，因此eventLoop.inEventLoop() = false
+             * 之后在doStartThread 中绑定
+             */
             if (eventLoop.inEventLoop()) {
                 /**
                  * 当前连接的channel关联的eventLoop的线程来执行这个方法
@@ -487,6 +492,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                 register0(promise);
             } else {
                 try {
+                    //eventLoop 的 executor 是 ThreadPerTaskExecutor，executor会新创建一个线程去跑这个Runnable
                     eventLoop.execute(new Runnable() {
                         @Override
                         public void run() {
@@ -520,7 +526,10 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                 // user may already fire events through the pipeline in the ChannelFutureListener.
                 pipeline.invokeHandlerAddedIfNeeded();
 
+                //回调注册到这个promise上的listener
                 safeSetSuccess(promise);
+
+
                 pipeline.fireChannelRegistered();
                 // Only fire a channelActive if the channel has never been registered. This prevents firing
                 // multiple channel actives if the channel is deregistered and re-registered.

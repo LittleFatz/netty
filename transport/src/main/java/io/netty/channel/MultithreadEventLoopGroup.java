@@ -85,8 +85,8 @@ public abstract class MultithreadEventLoopGroup extends MultithreadEventExecutor
     public ChannelFuture register(Channel channel) {
 
         /**
-         * next() 从当前group中选出一个eventloop
-         * eventLoop是一个单线程的线程池
+         * next() 从当前 group 中选出一个 NioEventLoop
+         * NioEventLoop 继承 SingleThreadEventLoop，是一个单线程的线程池
          */
 
         return next().register(channel);

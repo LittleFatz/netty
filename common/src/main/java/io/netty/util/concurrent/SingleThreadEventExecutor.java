@@ -821,6 +821,9 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
     }
 
     private void execute(Runnable task, boolean immediate) {
+        /**
+         * 第一次进来的时候，由于还未绑定一个 eventLoop，因此这里必定是false
+         */
         boolean inEventLoop = inEventLoop();
         addTask(task);
         if (!inEventLoop) {
@@ -978,6 +981,9 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
         executor.execute(new Runnable() {
             @Override
             public void run() {
+                /**
+                 * 这里绑定的线程，就是由ThreadPerTaskExecutor创建的线程
+                 */
                 thread = Thread.currentThread();
                 if (interrupted) {
                     thread.interrupt();

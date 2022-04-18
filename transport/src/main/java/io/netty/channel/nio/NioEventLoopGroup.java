@@ -179,6 +179,10 @@ public class NioEventLoopGroup extends MultithreadEventLoopGroup {
         if (argsLength > 4) {
             tailTaskQueueFactory = (EventLoopTaskQueueFactory) args[4];
         }
+        /**
+         * NioEventLoop 会继承 SingleThreadEventExecutor，
+         * SingleThreadEventExecutor中有个 thread 的属性，初始化的时候，由于还未绑定 eventLoop，因此为null
+         */
         return new NioEventLoop(this, executor, selectorProvider,
                 selectStrategyFactory.newSelectStrategy(),
                 rejectedExecutionHandler, taskQueueFactory, tailTaskQueueFactory);

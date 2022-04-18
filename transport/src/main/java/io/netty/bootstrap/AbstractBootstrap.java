@@ -312,7 +312,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
              * channelFactory.newChannel()中的 constructor 是 NioServerSocketChannel
              * 这个类是在 serverBootStrap 中 .channel(NioServerSocketChannel.class)设置的
              *
-             * 这里还创建了pineline的headContext和tailContext(在)
+             *
              *
              */
             channel = channelFactory.newChannel();
@@ -330,7 +330,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
 
         /**
          * config().group() 返回的是 boss的 NioEventLoopGroup
-         * 所以register调用的实际是 multiThreadEventExecutorGroup
+         * 所以 register调用的实际是 multiThreadEventExecutorGroup
          */
         ChannelFuture regFuture = config().group().register(channel);
         if (regFuture.cause() != null) {
