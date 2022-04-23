@@ -370,6 +370,8 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
         boolean ranAtLeastOne = false;
 
         do {
+            //把 调度任务队列内需要被调度的任务，转移到普通任务队列taskQueue中
+            //这里还需要注意的是， taskQueue长度远远小于 scheduledTaskQueue，所以这里每转移一批，都有跑一次
             fetchedAll = fetchFromScheduledTaskQueue();
             if (runAllTasksFrom(taskQueue)) {
                 ranAtLeastOne = true;
@@ -472,6 +474,13 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
 
             // Check timeout every 64 tasks because nanoTime() is relatively expensive.
             // XXX: Hard-coded value - will make it configurable if it is really a problem.
+
+            // 0x3F 这个是十六进制，代表十进制的63，二进制的 111111
+            /**
+             * 这里真的精妙！！！使用二进制方式实现每x次就做一些逻辑
+             * 64：   100 0000 & 111111 = 0；
+             * 128： 1000 0000 & 111111 = 0；
+             */
             if ((runTasks & 0x3F) == 0) {
                 lastExecutionTime = ScheduledFutureTask.nanoTime();
                 if (lastExecutionTime >= deadline) {
@@ -982,7 +991,7 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
             @Override
             public void run() {
                 /**
-                 * 这里绑定的线程，就是由ThreadPerTaskExecutor创建的线程
+                 * 这里绑定的线程 Thread.currentThread()就是由ThreadPerTaskExecutor创建的线程
                  */
                 thread = Thread.currentThread();
                 if (interrupted) {
@@ -992,6 +1001,8 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
                 boolean success = false;
                 updateLastExecutionTime();
                 try {
+                    //SingleThreadEventExecutor.this指的是当前这个NioEventLoop，
+                    //所以这里的意思是调用NioEventLoop.run
                     SingleThreadEventExecutor.this.run();
                     success = true;
                 } catch (Throwable t) {

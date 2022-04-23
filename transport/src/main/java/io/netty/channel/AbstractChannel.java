@@ -492,6 +492,10 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                 register0(promise);
             } else {
                 try {
+                    /**
+                     * eventLoop 里面的 executor 是 ThreadPerTaskExecutor
+                     * 这里最终会调用 SingleThreadEventExecutor 的execute方法
+                     */
                     //eventLoop 的 executor 是 ThreadPerTaskExecutor，executor会新创建一个线程去跑这个Runnable
                     eventLoop.execute(new Runnable() {
                         @Override

@@ -135,6 +135,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     private int cancelledKeys;
     private boolean needsToSelectAgain;
 
+    // 通过调用 newChild 过来这里的
     NioEventLoop(NioEventLoopGroup parent, Executor executor, SelectorProvider selectorProvider,
                  SelectStrategy strategy, RejectedExecutionHandler rejectedExecutionHandler,
                  EventLoopTaskQueueFactory taskQueueFactory, EventLoopTaskQueueFactory tailTaskQueueFactory) {
@@ -225,6 +226,10 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                                 PlatformDependent.objectFieldOffset(publicSelectedKeysField);
 
                         if (selectedKeysFieldOffset != -1 && publicSelectedKeysFieldOffset != -1) {
+                            /**
+                             * unwrappedSelector 是 java nio原生的selector，具体应该是指sun.nio.ch.SelectorImpl
+                             * 然后把SelectorImpl里面的属性selectedKeys和publicSelectedKeys的值，添加到selectedKeySet中
+                             */
                             PlatformDependent.putObject(
                                     unwrappedSelector, selectedKeysFieldOffset, selectedKeySet);
                             PlatformDependent.putObject(
@@ -436,12 +441,22 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     }
 
     @Override
+    //从 SingleThreadEventExecutor调用过来
     protected void run() {
         int selectCnt = 0;
         for (;;) {
             try {
+                /**
+                 *  >=0 : 表示 selector上就绪的数量
+                 *
+                 */
                 int strategy;
                 try {
+                    /**
+                     * selectStrategy : DefaultSelectStrategy
+                     * 如果该eventLoop有任务：就调用多路复用器的selectNow
+                     * 否则返回 -1（SelectStrategy.SELECT）
+                     */
                     strategy = selectStrategy.calculateStrategy(selectNowSupplier, hasTasks());
                     switch (strategy) {
                     case SelectStrategy.CONTINUE:
@@ -451,12 +466,23 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                         // fall-through to SELECT since the busy-wait is not supported with NIO
 
                     case SelectStrategy.SELECT:
+                        /**
+                         * 没有任务的话就进入这里
+                         */
+
+
                         long curDeadlineNanos = nextScheduledTaskDeadlineNanos();
+                        //如果没有周期性执行任务的话，curDeadlineNanos是LONG.max
                         if (curDeadlineNanos == -1L) {
                             curDeadlineNanos = NONE; // nothing on the calendar
                         }
                         nextWakeupNanos.set(curDeadlineNanos);
                         try {
+                            //没有本地普通任务执行
+                            /**
+                             * 所以感觉netty应该是有两类任务的
+                             * 普通任务和定时任务
+                             */
                             if (!hasTasks()) {
                                 strategy = select(curDeadlineNanos);
                             }
@@ -477,21 +503,29 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                     continue;
                 }
 
+
                 selectCnt++;
                 cancelledKeys = 0;
                 needsToSelectAgain = false;
+
+                /**
+                 * ioRatio 处理io事件和本地任务的时间比例
+                 */
                 final int ioRatio = this.ioRatio;
                 boolean ranTasks;
                 if (ioRatio == 100) {
                     try {
                         if (strategy > 0) {
+                            //处理IO事件的入口
                             processSelectedKeys();
                         }
                     } finally {
                         // Ensure we always run tasks.
                         ranTasks = runAllTasks();
                     }
-                } else if (strategy > 0) {
+                }
+                // 已经有 channel 就绪
+                else if (strategy > 0) {
                     final long ioStartTime = System.nanoTime();
                     try {
                         processSelectedKeys();
@@ -500,7 +534,10 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                         final long ioTime = System.nanoTime() - ioStartTime;
                         ranTasks = runAllTasks(ioTime * (100 - ioRatio) / ioRatio);
                     }
-                } else {
+                }
+                //没有任何就绪事件
+
+                else {
                     ranTasks = runAllTasks(0); // This will run the minimum number of tasks
                 }
 
@@ -653,9 +690,11 @@ public final class NioEventLoop extends SingleThreadEventLoop {
             // See https://github.com/netty/netty/issues/2363
             selectedKeys.keys[i] = null;
 
+            //获得注册阶段的channel，有可能是 nioServerSocketChannel 或者 nioSocketChannel
             final Object a = k.attachment();
 
             if (a instanceof AbstractNioChannel) {
+                //处理io事件
                 processSelectedKey(k, (AbstractNioChannel) a);
             } else {
                 @SuppressWarnings("unchecked")
@@ -675,6 +714,10 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     }
 
     private void processSelectedKey(SelectionKey k, AbstractNioChannel ch) {
+        /**
+         * NioServerSocketChannel： NioMessageUnsafe
+         * NioSocketChannel: NioByteUnsafe
+         */
         final AbstractNioChannel.NioUnsafe unsafe = ch.unsafe();
         if (!k.isValid()) {
             final EventLoop eventLoop;
@@ -810,9 +853,13 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     }
 
     private int select(long deadlineNanos) throws IOException {
+        //没有周期性任务
         if (deadlineNanos == NONE) {
             return selector.select();
         }
+
+        // 有周期性任务就会进入下面的逻辑
+        // 此时deadlineNanos是该任务的截止时间（应该是指触发的具体时间点）
         // Timeout will only be 0 if deadline is within 5 microsecs
         long timeoutMillis = deadlineToDelayNanos(deadlineNanos + 995000L) / 1000000L;
         return timeoutMillis <= 0 ? selector.selectNow() : selector.select(timeoutMillis);
