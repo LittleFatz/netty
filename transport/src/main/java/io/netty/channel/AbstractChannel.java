@@ -71,7 +71,15 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
     protected AbstractChannel(Channel parent) {
         this.parent = parent;
         id = newId();
+        /**
+         * 如果是 NioServerSocketChannel，unsafe是 NioMessageUnsafe
+         * 如果是 NioSocketChannel，unsafe是 NioByreUnsafe
+         */
         unsafe = newUnsafe();
+        /**
+         * 创建当前channel内部的pipeline
+         * 默认添加 headContext 和 tailContext
+         */
         pipeline = newChannelPipeline();
     }
 
@@ -476,8 +484,8 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
 
             /**
              * AbstractUnsafe 作为 AbstractChannel的内部类，这类是获取AbstractChannel的eventLoop
-             * 这里的 AbstractChannel 的是 NiOServerSocketChannel
-             * 绑定 channel 和 eventLoop
+             * 这里的 AbstractChannel 的是 NiOServerSocketChannel 或 NioSocketChannel
+             * 指定 channel 中的 eventLoop 为参数中的 eventLoop
              */
             AbstractChannel.this.eventLoop = eventLoop;
 
@@ -528,6 +536,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
 
                 // Ensure we call handlerAdded(...) before we actually notify the promise. This is needed as the
                 // user may already fire events through the pipeline in the ChannelFutureListener.
+                // ChannelInitializer 会在这里进行拆包
                 pipeline.invokeHandlerAddedIfNeeded();
 
                 //回调注册到这个promise上的listener
@@ -537,6 +546,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                 pipeline.fireChannelRegistered();
                 // Only fire a channelActive if the channel has never been registered. This prevents firing
                 // multiple channel actives if the channel is deregistered and re-registered.
+                //如果是客户端的话，isActive() = true
                 if (isActive()) {
                     if (firstRegistration) {
                         pipeline.fireChannelActive();
