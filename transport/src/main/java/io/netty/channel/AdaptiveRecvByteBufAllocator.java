@@ -42,15 +42,18 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
     private static final int INDEX_INCREMENT = 4;
     private static final int INDEX_DECREMENT = 1;
 
+    // 给 guess（）用的
     private static final int[] SIZE_TABLE;
 
     static {
         List<Integer> sizeTable = new ArrayList<Integer>();
+        //向数组添加 16，32,48.。。。直到512
         for (int i = 16; i < 512; i += 16) {
             sizeTable.add(i);
         }
 
         // Suppress a warning since i becomes negative when an integer overflow happens
+        //不断左移一位，添加512,1024，。。。。直到 i 溢出变成负数（这个想法有点强）
         for (int i = 512; i > 0; i <<= 1) { // lgtm[java/constant-comparison]
             sizeTable.add(i);
         }
@@ -124,6 +127,7 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
         }
 
         private void record(int actualReadBytes) {
+            //每次判断一下，是否需要缩小buffer，于是index不断往左移
             if (actualReadBytes <= SIZE_TABLE[max(0, index - INDEX_DECREMENT)]) {
                 if (decreaseNow) {
                     index = max(index - INDEX_DECREMENT, minIndex);
@@ -132,7 +136,9 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
                 } else {
                     decreaseNow = true;
                 }
-            } else if (actualReadBytes >= nextReceiveBufferSize) {
+            }
+            //获取一个更大的buffer
+            else if (actualReadBytes >= nextReceiveBufferSize) {
                 index = min(index + INDEX_INCREMENT, maxIndex);
                 nextReceiveBufferSize = SIZE_TABLE[index];
                 decreaseNow = false;
@@ -174,6 +180,7 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
             throw new IllegalArgumentException("maximum: " + maximum);
         }
 
+        //通过二分查找法找到对应的 sizeTable 下标
         int minIndex = getSizeTableIndex(minimum);
         if (SIZE_TABLE[minIndex] < minimum) {
             this.minIndex = minIndex + 1;
@@ -188,6 +195,7 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
             this.maxIndex = maxIndex;
         }
 
+        //初始值是1024
         this.initial = initial;
     }
 

@@ -132,13 +132,17 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
         }
 
         @Override
+        //客户端读取
         public final void read() {
+            // config 默认是 AdaptiveRecvByteBufAllocator
             final ChannelConfig config = config();
             if (shouldBreakReadReady(config)) {
                 clearReadPending();
                 return;
             }
             final ChannelPipeline pipeline = pipeline();
+
+            //只要不是安卓平台，就会获取到一个池化内存管理的缓冲区分配器
             final ByteBufAllocator allocator = config.getAllocator();
             final RecvByteBufAllocator.Handle allocHandle = recvBufAllocHandle();
             allocHandle.reset(config);
@@ -147,8 +151,17 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
             boolean close = false;
             try {
                 do {
+                    /**
+                     * allocator : 负责真正分配内存
+                     * allocHandle： 负责预测分配多大内存
+                     */
                     byteBuf = allocHandle.allocate(allocator);
                     allocHandle.lastBytesRead(doReadBytes(byteBuf));
+
+                    /**
+                     * 0 : channel 已经读取完毕
+                     * -1 ： channel 对端已经关闭
+                     */
                     if (allocHandle.lastBytesRead() <= 0) {
                         // nothing was read. release the buffer.
                         byteBuf.release();
