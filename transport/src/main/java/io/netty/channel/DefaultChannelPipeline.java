@@ -1366,6 +1366,11 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         }
 
         @Override
+        /**
+         * ctx：headContext自己
+         * msg: 一般是 ByteBuf
+         * unsafe： NioSocketChannelUnsafe
+         */
         public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) {
             unsafe.write(msg, promise);
         }

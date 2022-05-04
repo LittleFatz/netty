@@ -436,6 +436,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
      */
     protected abstract class AbstractUnsafe implements Unsafe {
 
+        //每个channel都有属于自己的unsafe，每个unsafe都有一个属于自己的ChannelOutboundBuffer
         private volatile ChannelOutboundBuffer outboundBuffer = new ChannelOutboundBuffer(AbstractChannel.this);
         private RecvByteBufAllocator.Handle recvHandle;
         private boolean inFlush0;
@@ -895,6 +896,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
 
             int size;
             try {
+                //ByteBuf有两种类型，heap 和 direct，如果是 heap的话，则转化为 direct
                 msg = filterOutboundMessage(msg);
                 size = pipeline.estimatorHandle().size(msg);
                 if (size < 0) {
@@ -908,7 +910,11 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                 }
                 return;
             }
-
+            /**
+             * 将 ByteBuf数据加入到出站缓冲区
+             * msg: ByteBuf
+             * promise: 业务回调，关注这次读写是否成功
+             */
             outboundBuffer.addMessage(msg, size, promise);
         }
 
@@ -920,8 +926,10 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
             if (outboundBuffer == null) {
                 return;
             }
-
+            //flush前的准备工作，修改 flushedEntry 和 unflushedEntry
             outboundBuffer.addFlush();
+
+            //真正刷到socket
             flush0();
         }
 
@@ -958,6 +966,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
             }
 
             try {
+                //调用的是 NioSocketChannel#doWrite
                 doWrite(outboundBuffer);
             } catch (Throwable t) {
                 handleWriteError(t);

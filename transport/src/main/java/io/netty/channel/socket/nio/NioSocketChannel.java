@@ -385,8 +385,10 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
     @Override
     protected void doWrite(ChannelOutboundBuffer in) throws Exception {
         SocketChannel ch = javaChannel();
+        //默认是16
         int writeSpinCount = config().getWriteSpinCount();
         do {
+            //正常退出会进入这个if逻辑
             if (in.isEmpty()) {
                 // All written so clear OP_WRITE
                 clearOpWrite();
@@ -396,7 +398,14 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
 
             // Ensure the pending writes are made of ByteBufs only.
             int maxBytesPerGatheringWrite = ((NioSocketChannelConfig) config).getMaxBytesPerGatheringWrite();
+
+            /**
+             * 把 ByteBuf 转换为 ByteBuffer
+             * 1024: 最多转换出1024个 ByteBuffer 对象
+             * maxBytesPerGatheringWrite： 最多转换大小为 maxBytes 的 ByteBuf 对象
+             */
             ByteBuffer[] nioBuffers = in.nioBuffers(1024, maxBytesPerGatheringWrite);
+
             int nioBufferCnt = in.nioBufferCount();
 
             // Always use nioBuffers() to workaround data-corruption.
@@ -410,8 +419,11 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
                     // Only one ByteBuf so use non-gathering write
                     // Zero length buffers are not added to nioBuffers by ChannelOutboundBuffer, so there is no need
                     // to check if the total size of all the buffers is non-zero.
+                    // 因为nioBufferCnt是1，所以 刚刚nioBuffers方法 只转换出来了 一个 byteBuffer 对象。
                     ByteBuffer buffer = nioBuffers[0];
+                    // 获取byteBuffer有效数据大小
                     int attemptedBytes = buffer.remaining();
+                    // 使用JDK 层面的ch.write 将 buffer 内的数据 写入到 socket 写缓冲区内..返回值 是 本次 write 真正 写入 socket 的大小。。
                     final int localWrittenBytes = ch.write(buffer);
                     if (localWrittenBytes <= 0) {
                         incompleteWrite(true);

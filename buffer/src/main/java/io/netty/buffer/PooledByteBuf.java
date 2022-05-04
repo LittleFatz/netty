@@ -190,6 +190,8 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
 
     final ByteBuffer _internalNioBuffer(int index, int length, boolean duplicate) {
         index = idx(index);
+
+        // buffer 与 memory 管理同一块 空间
         ByteBuffer buffer = duplicate ? newInternalNioBuffer(memory) : internalNioBuffer();
         buffer.limit(index + length).position(index);
         return buffer;

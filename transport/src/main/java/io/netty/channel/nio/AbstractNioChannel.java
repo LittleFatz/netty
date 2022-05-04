@@ -441,8 +441,10 @@ public abstract class AbstractNioChannel extends AbstractChannel {
             return Unpooled.EMPTY_BUFFER;
         }
 
+        //alloc: PooledByteBufAllocator
         final ByteBufAllocator alloc = alloc();
         if (alloc.isDirectBufferPooled()) {
+            //根据可读数据量，使用alloc分配一块指定大小的堆外内存
             ByteBuf directBuf = alloc.directBuffer(readableBytes);
             directBuf.writeBytes(buf, buf.readerIndex(), readableBytes);
             ReferenceCountUtil.safeRelease(buf);
