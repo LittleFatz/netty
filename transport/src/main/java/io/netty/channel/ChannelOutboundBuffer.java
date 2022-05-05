@@ -314,8 +314,10 @@ public final class ChannelOutboundBuffer {
 
         if (!e.cancelled) {
             // only release message, notify and decrement if it was not canceled before.
+            // byteBuf 实现了 引用记数，这里 safeRelease 更新引用记数，最终可能会触发 byteBuf 归还内存的逻辑
             ReferenceCountUtil.safeRelease(msg);
             safeSuccess(promise);
+            // 原子减少 出站缓冲区 总容量 ，减去 移除的 entry.pendingSize
             decrementPendingOutboundBytes(size, false, true);
         }
 
@@ -380,6 +382,7 @@ public final class ChannelOutboundBuffer {
      */
     public void removeBytes(long writtenBytes) {
         for (;;) {
+            // 获取flushedEntry节点 指向的 entry.msg 数据
             Object msg = current();
             if (!(msg instanceof ByteBuf)) {
                 assert writtenBytes == 0;
@@ -390,13 +393,18 @@ public final class ChannelOutboundBuffer {
             final int readerIndex = buf.readerIndex();
             final int readableBytes = buf.writerIndex() - readerIndex;
 
+            // 条件如果成立：说明 unsafe 写入到 socket底层缓冲区的 数据量 > flushedEntry.msg 可读数据量大小，if内的逻辑 就是移除 flushedEntry 代表的
             if (readableBytes <= writtenBytes) {
                 if (writtenBytes != 0) {
                     progress(readableBytes);
                     writtenBytes -= readableBytes;
                 }
+
+                // 移除当前entry
                 remove();
-            } else { // readableBytes > writtenBytes
+            }
+            // 执行到else 说明 unsafe 真正写入到 socket 的数据量 < 当前 flushedEntry.msg 可读数据量的。
+            else { // readableBytes > writtenBytes
                 if (writtenBytes != 0) {
                     buf.readerIndex(readerIndex + (int) writtenBytes);
                     progress(writtenBytes);

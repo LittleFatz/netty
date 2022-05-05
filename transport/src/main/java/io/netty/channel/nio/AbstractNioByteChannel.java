@@ -301,6 +301,10 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
 
     protected final void incompleteWrite(boolean setOpWrite) {
         // Did not write completely.
+        /**
+         * 如果调用 doWriteBytes 发送消息，发送的字节数为0，则返回一个WRITE_STATUS_SNDBUF_FULL = Integer.MAX_VALUE值。Socket 的 Buffer 已经写满，无法再继续发送数据。
+         *  这说明该消息还未写完，然后调用 setOpWrite() 方法，在 Selector 上注册写标识
+         */
         if (setOpWrite) {
             setOpWrite();
         } else {
