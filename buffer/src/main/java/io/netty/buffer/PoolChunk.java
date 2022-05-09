@@ -193,6 +193,7 @@ final class PoolChunk<T> implements PoolChunkMetric {
         unpooled = false;
         this.arena = arena;
         this.base = base;
+        // 让chunk直接持有 byteBuffer 对象
         this.memory = memory;
         this.pageSize = pageSize;
         this.pageShifts = pageShifts;

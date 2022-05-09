@@ -67,16 +67,36 @@ final class PoolThreadCache {
                     int smallCacheSize, int normalCacheSize, int maxCachedBufferCapacity,
                     int freeSweepAllocationThreshold) {
         checkPositiveOrZero(maxCachedBufferCapacity, "maxCachedBufferCapacity");
+
+        // 8192 ,当使用 PoolThreadCache get 8192 次之后，会进行一次主动 清理空闲内存的逻辑，将缓存的内存位置信息 归还给 PoolAlloctor。
         this.freeSweepAllocationThreshold = freeSweepAllocationThreshold;
+
+        // 保存分配给当前线程的 这两个 arena ，注意：arena 是由多线程共享的。一个线程只有一个 指定的  direct、 heap arena
         this.heapArena = heapArena;
         this.directArena = directArena;
+
+        /**
+         * 旧版本的 netty 有 tinySubPageDirectCaches
+         */
         if (directArena != null) {
+
+            // 参数1：smallCacheSize 256
+            // 参数2：numSmallSubpagePools 4
+            // 创建出来一个长度为 4 的MemoryRegionCache 数组，并且数组内每一个元素 类型为 SubpageMemoryRegionCache 类型。
+            // SubpageMemoryRegionCache 包含一个 固定长度{256}的队列
             smallSubPageDirectCaches = createSubPageCaches(
                     smallCacheSize, directArena.numSmallSubpagePools);
 
+
+            // 参数1：normalCacheSize 64
+            // 参数2：maxCachedBufferCapacity 32k
+            // 参数3：directArena
+            // 创建出来长度为3的 memoryRegionCache 数组，数组内每个元素类型为 NormalMemoryRegionCache，
+            // 并且每个cache 能缓存 64 个 内存位置信息。  cache[0] 缓存的规格为 8k  cache[1] 缓存的规格为 16k  cache[2]  缓存的规格为 32k
             normalDirectCaches = createNormalCaches(
                     normalCacheSize, maxCachedBufferCapacity, directArena);
 
+            // 给当前PoolThreadCache 占用的 directArena 自增使用的线程数量。
             directArena.numThreadCaches.getAndIncrement();
         } else {
             // No directArea is configured so just null out all caches
@@ -130,6 +150,8 @@ final class PoolThreadCache {
             // Create as many normal caches as we support based on how many sizeIdx we have and what the upper
             // bound is that we want to cache in general.
             List<MemoryRegionCache<T>> cache = new ArrayList<MemoryRegionCache<T>>() ;
+
+            // 创建出来的每个 NormalMemoryRegionCache 内部的队列长度为 64，表示可以缓存 64个 normal 类型的 内存位置信息
             for (int idx = area.numSmallSubpagePools; idx < area.nSizes && area.sizeIdx2size(idx) <= max ; idx++) {
                 cache.add(new NormalMemoryRegionCache<T>(cacheSize));
             }
