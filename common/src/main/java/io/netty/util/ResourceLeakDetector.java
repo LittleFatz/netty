@@ -41,15 +41,24 @@ import static io.netty.util.internal.StringUtil.simpleClassName;
 
 public class ResourceLeakDetector<T> {
 
+    // 通过key 可以修改 资源监控级别。
     private static final String PROP_LEVEL_OLD = "io.netty.leakDetectionLevel";
     private static final String PROP_LEVEL = "io.netty.leakDetection.level";
+
+    // 默认值是：simple 级别。
     private static final Level DEFAULT_LEVEL = Level.SIMPLE;
 
+    // 通过key 可以修改 资源追踪器（leak）它的 记录数
     private static final String PROP_TARGET_RECORDS = "io.netty.leakDetection.targetRecords";
+
+    // 默认记录数：4， 这个值并不是说  不能超过 它，而是达到之后  会有限制。
     private static final int DEFAULT_TARGET_RECORDS = 4;
 
+    // 通修 key  可以修改 采样阈值。
     private static final String PROP_SAMPLING_INTERVAL = "io.netty.leakDetection.samplingInterval";
     // There is a minor performance benefit in TLR if this is a power of 2.
+
+    // 默认阈值是 128.
     private static final int DEFAULT_SAMPLING_INTERVAL = 128;
 
     private static final int TARGET_RECORDS;
@@ -252,9 +261,17 @@ public class ResourceLeakDetector<T> {
             return null;
         }
 
+        // 条件成立：说明 level 是 simple 或者 advance 状态。
         if (level.ordinal() < Level.PARANOID.ordinal()) {
+            // 计算一个随机数，随机数取值范围 samplingInterval ,如果随机数的值是 0 ，则对该资源进行 追踪。
             if ((PlatformDependent.threadLocalRandom().nextInt(samplingInterval)) == 0) {
                 reportLeak();
+
+                // 创建资源泄露追踪器
+                // 参数1：obj，被追踪的对象，weakReference 保存它。
+                // 参数2：refQueue，资源泄露检测器对象范围的 引用队列，当 obj 被GC 后，leak 会加入到 该 refQueue。(前提条件：weak.ref -> obj时。)
+                // 参数3：allLeaks, 资源泄露检测器对象范围的 集合leaks，每创建一个leak，都会将该leak加入到 leaks 集合内。 后续判定
+                // 是否发生资源 泄露 都与该 集合有关系。
                 return new DefaultResourceLeak(obj, refQueue, allLeaks, getInitialHint(resourceType));
             }
             return null;
@@ -292,10 +309,12 @@ public class ResourceLeakDetector<T> {
         // Detect and report previous leaks.
         for (;;) {
             DefaultResourceLeak ref = (DefaultResourceLeak) refQueue.poll();
+            // 条件成立：说明当前引用队列 已经全部处理完毕..，这里跳出循环。
             if (ref == null) {
                 break;
             }
 
+            // ref.dispose() 如果返回true，说明发生资源泄露了。
             if (!ref.dispose()) {
                 continue;
             }
@@ -366,11 +385,16 @@ public class ResourceLeakDetector<T> {
                         AtomicIntegerFieldUpdater.newUpdater(DefaultResourceLeak.class, "droppedRecords");
 
         @SuppressWarnings("unused")
+        // record 资源使用的记录信息，它继承自 Throwable，天生带着 创建时 的 线程堆栈信息。
         private volatile TraceRecord head;
         @SuppressWarnings("unused")
+        // 删除的 record 记录数。
         private volatile int droppedRecords;
 
+        // 保存的就是 资源泄露检测器对象范围的 集合leaks（也可以把这个理解为正在活跃的资源）
         private final Set<DefaultResourceLeak<?>> allLeaks;
+
+        // 被追踪对象的hash值。如果保存 被追踪对象的 强引用..会导致 该 被追踪对象 多一个 强引用....
         private final int trackedHash;
 
         DefaultResourceLeak(
@@ -385,9 +409,15 @@ public class ResourceLeakDetector<T> {
             // Store the hash of the tracked object to later assert it in the close(...) method.
             // It's important that we not store a reference to the referent as this would disallow it from
             // be collected via the WeakReference.
+            // 存储跟踪对象的哈希，以便稍后在close（…）方法中断言它。
+            // 重要的是，我们不要存储对referent的引用，因为这将禁止它从
+            // 通过WeakReference收集。
             trackedHash = System.identityHashCode(referent);
+
+            // 加入到 资源泄露检测器 范围 集合leaks.
             allLeaks.add(this);
             // Create a new Record so we always have the creation stacktrace included.
+            // 记录一条 record 信息。 通过这一条 record 可以知道 当前被追踪对象的 创建时 的线程堆栈信息。
             headUpdater.set(this, initialHint == null ?
                     new TraceRecord(TraceRecord.BOTTOM) : new TraceRecord(TraceRecord.BOTTOM, initialHint));
             this.allLeaks = allLeaks;
@@ -432,22 +462,36 @@ public class ResourceLeakDetector<T> {
         private void record0(Object hint) {
             // Check TARGET_RECORDS > 0 here to avoid similar check before remove from and add to lastRecords
             if (TARGET_RECORDS > 0) {
+                // 原头结点
                 TraceRecord oldHead;
+
+                // 上一个头结点
                 TraceRecord prevHead;
+
+                // 新头结点
                 TraceRecord newHead;
+
+                // 是否删除节点
                 boolean dropped;
                 do {
                     if ((prevHead = oldHead = headUpdater.get(this)) == null) {
                         // already closed.
                         return;
                     }
+                    // 计算出当前 资源泄露追踪器 内 有多少 records 信息。
                     final int numElements = oldHead.pos + 1;
+
+                    // 条件成立：说明已经达到 TARGET_RECORDS (def = 4) 阈值了，不再无脑添加新records 信息了，而是 根据策略决定。
                     if (numElements >= TARGET_RECORDS) {
                         final int backOffFactor = Math.min(numElements - TARGET_RECORDS, 30);
+
+                        // 计算出的随机数 如果 不等于 0，则是 替换原头结点，保留最新的 调用信息。
                         if (dropped = PlatformDependent.threadLocalRandom().nextInt(1 << backOffFactor) != 0) {
                             prevHead = oldHead.next;
                         }
                     } else {
+
+                        // 设置为 false，表示 是 插入 record，而不是替换。
                         dropped = false;
                     }
                     newHead = hint != null ? new TraceRecord(prevHead, hint) : new TraceRecord(prevHead);
@@ -460,11 +504,17 @@ public class ResourceLeakDetector<T> {
 
         boolean dispose() {
             clear();
+            // 正常情况下： close 时 就已经将当前leak 从 allLeaks 内移除了，
+            // 这里如果返回true，说明 没能正常关闭资源。
             return allLeaks.remove(this);
         }
 
         @Override
         public boolean close() {
+            // 正常逻辑：
+            //1. allLeaks.remove(this)  将当前资源泄露追踪器 从 资源泄露检测器的 allLeaks 集合内 移除。
+            //2. clear(); 因为 资源泄露追踪器 它是 弱引用，这里将 引用字段设置为null，后续 被管理对象 被 gc 就不再进行 通知了。
+            //3. 将调用记录清理掉。
             if (allLeaks.remove(this)) {
                 // Call clear so the reference is not even enqueued.
                 clear();
@@ -647,6 +697,7 @@ public class ResourceLeakDetector<T> {
         }
 
         @Override
+        //这里负责构建追踪对象的堆栈信息
         public String toString() {
             StringBuilder buf = new StringBuilder(2048);
             if (hintString != null) {
@@ -656,6 +707,7 @@ public class ResourceLeakDetector<T> {
             // Append the stack trace.
             StackTraceElement[] array = getStackTrace();
             // Skip the first three elements.
+            //前三个堆栈信息是ResourceLeakDetector相关，报告出来无意义，所以可以直接跳过
             out: for (int i = 3; i < array.length; i++) {
                 StackTraceElement element = array[i];
                 // Strip the noisy stack trace elements.

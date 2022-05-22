@@ -456,6 +456,8 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
                     new UnpooledDirectByteBuf(this, initialCapacity, maxCapacity);
         }
 
+        // 该方法会根据检测级别 进行追踪 byteBuf 资源对象，默认检测级别是 simple。
+        // 会抽样一小部分 byteBuf 进行资源追踪，当被追踪的资源发生泄漏后， 资源检测器 会 打印 error 日志。
         return toLeakAwareBuffer(buf);
     }
 
