@@ -70,9 +70,16 @@ public class FixedLengthFrameDecoder extends ByteToMessageDecoder {
      */
     protected Object decode(
             @SuppressWarnings("UnusedParameters") ChannelHandlerContext ctx, ByteBuf in) throws Exception {
+
+        //堆积区里的数据量小于 frameLength（半包）
         if (in.readableBytes() < frameLength) {
             return null;
         } else {
+
+            // readRetainedSlice 从原堆积区读取 指定长度的 字节量创建出来新的 ByteBuf ，并且会增加 堆积区的 引用记数值。
+            // 为什么要增加引用记数值？
+            // 因为切片出来的byteBuf 占用的内存是 堆积区 内存的子集，在 切片未释放内存之前，堆积区ByteBuf 不能去释放内存，不然 切片就找不到内存了...
+            // 切片byteBuf.release() 会将 它的父节点，堆积区 ByteBuf 引用记数 -1 。
             return in.readRetainedSlice(frameLength);
         }
     }

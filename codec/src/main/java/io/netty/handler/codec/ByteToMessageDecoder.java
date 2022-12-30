@@ -87,6 +87,8 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
             }
             try {
                 final int required = in.readableBytes();
+
+                // 条件一：成立，说明 堆积区 ByteBuf 容量 不足以支撑 本次 从socket加载的数据量..需要扩容
                 if (required > cumulation.maxWritableBytes() ||
                     required > cumulation.maxFastWritableBytes() && cumulation.refCnt() > 1 ||
                     cumulation.isReadOnly()) {
@@ -96,8 +98,14 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
                     //   assumed to be shared (e.g. refCnt() > 1) and the reallocation may not be safe.
                     return expandCumulation(alloc, cumulation, in);
                 }
+
+                // 执行到这里，说明 当前 decoder的堆积区（大碗） 还有空间，可以盛装本次 in 内部的全部数据。
+
                 cumulation.writeBytes(in, in.readerIndex(), required);
+
+                // 更新in 的读索引 与 它的写索引一致，表示 in 的数据全部处理了..
                 in.readerIndex(in.writerIndex());
+                // 返回原堆积区..
                 return cumulation;
             } finally {
                 // We must release in all cases as otherwise it may produce a leak if writeBytes(...) throw
@@ -147,13 +155,26 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
         }
     };
 
+    // 初始状态
     private static final byte STATE_INIT = 0;
+
+    // 调用子类实现的decode方法时期状态
     private static final byte STATE_CALLING_CHILD_DECODE = 1;
+
+    // 当decoder从PIPELINE移除出去之后，状态会修改为 REMOVED_PENDING状态。
     private static final byte STATE_HANDLER_REMOVED_PENDING = 2;
 
+    // 堆积区ByteBuf（大碗）
     ByteBuf cumulation;
+
+    // 小碗的面条来了之后，cumulator负责 将其 合并到 大碗（cumulation）内。
     private Cumulator cumulator = MERGE_CUMULATOR;
+
+    // 默认是false，如果是true 每次ChannelRead 只解码一个 frame 。
     private boolean singleDecode;
+
+    // true 代表 cumulation 值是null，否则 代码 cumulation 不为null.
+    // 当cumulation内部的数据完全处理完毕之后，Decoder它会把cumulation占用的堆外内存释放，并且将cumulation字段置为null。
     private boolean first;
 
     /**
@@ -173,7 +194,12 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
      * </ul>
      */
     private byte decodeState = STATE_INIT;
+
+    // 清理cumulation 已读空间的阈值，当cumulation readIndex 比较大时，cumulation 可写的空间就会变小...通过
+    // 整理的方法 可以 调整 cumulation的 readIndex 和 writeIndex 让其复用 空闲的 内存。
     private int discardAfterReads = 16;
+
+    // 表示当前cumulation 已经 累积进去多少小碗 数据..
     private int numReads;
 
     protected ByteToMessageDecoder() {
@@ -269,25 +295,43 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        // msg 是ch.unsafe 到ch底层关联的socket读取数据时 使用的 byteBuf （小碗）
         if (msg instanceof ByteBuf) {
             selfFiredChannelRead = true;
             CodecOutputList out = CodecOutputList.newInstance();
             try {
                 first = cumulation == null;
+
+                // 将小碗的面条 合并 到 大碗里面。(小碗面条的 头 与 大碗面条的尾相连)
+                // 参数1：内存池
+                // 参数2：堆积区ByteBuf （大碗）
+                // 参数3：小碗
                 cumulation = cumulator.cumulate(ctx.alloc(),
                         first ? Unpooled.EMPTY_BUFFER : cumulation, (ByteBuf) msg);
+
+                // 参数1：ctx 包装当前handler 的 context
+                // 参数2：cumulation 堆积区
+                // 参数3：out, 已解码的数据集合List
                 callDecode(ctx, cumulation, out);
+
+                // 总结：
+                // 1. cumulation 堆积区内的数据 全部解析成 frame ，并且已经发送到 decoder 后面的 handler 去处理了 （out 内可能剩余有 未发送的 frame）
+                // 2. cumulation 堆积区内的数据 是半包数据...
+
             } catch (DecoderException e) {
                 throw e;
             } catch (Exception e) {
                 throw new DecoderException(e);
             } finally {
                 try {
+                    // 条件成立：说明 cumulation 内部的数据 全部处理完成了...
                     if (cumulation != null && !cumulation.isReadable()) {
                         numReads = 0;
                         cumulation.release();
                         cumulation = null;
-                    } else if (++numReads >= discardAfterReads) {
+                    }
+                    //堆积区内剩余的数据 是半包 数据...（cumulation.isReadable() = true，意思是cumulation还有数据可读）
+                    else if (++numReads >= discardAfterReads) {
                         // We did enough reads already try to discard some bytes, so we not risk to see a OOME.
                         // See https://github.com/netty/netty/issues/4275
                         numReads = 0;
@@ -296,6 +340,8 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
 
                     int size = out.size();
                     firedChannelRead |= out.insertSinceRecycled();
+
+                    // 将 out 内 未发送的数据，也向后handler 通知过去。
                     fireChannelRead(ctx, out, size);
                 } finally {
                     out.recycle();
@@ -429,6 +475,8 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
     protected void callDecode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) {
         try {
             while (in.isReadable()) {
+
+                // 刚调用传过来的 out 这个list size 是  0.
                 final int outSize = out.size();
 
                 if (outSize > 0) {
@@ -445,7 +493,10 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
                     }
                 }
 
+                // 获取 堆积区 待处理数据量 大小。
                 int oldInputLength = in.readableBytes();
+
+                // 内部调用了 decode 方法，该方法由子类实现，子类通过将 in 的数据 解析成 业务协议的 frame ，并且放入到 out 这个List内。
                 decodeRemovalReentryProtection(ctx, in, out);
 
                 // Check if this handler was removed before continuing the loop.
@@ -457,6 +508,9 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
                 }
 
                 if (out.isEmpty()) {
+                    // 成立：说明 in 堆积区 内的数据，属于半包数据..
+                    // in.readableBytes()：堆积区里可以读取的数据，如果成功decode的话，会减少
+                    //oldInputLength： 堆积区decode前的可读数据量大小
                     if (oldInputLength == in.readableBytes()) {
                         break;
                     } else {
@@ -534,18 +588,30 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
         }
     }
 
+    // // 返回新的堆积区，新的堆积区 包含 原堆积区 所有未处理数据 和 in（小碗） 内部的所有数据。
     static ByteBuf expandCumulation(ByteBufAllocator alloc, ByteBuf oldCumulation, ByteBuf in) {
+
+        // 获取 原堆积区 未处理的数据量大小
         int oldBytes = oldCumulation.readableBytes();
+
+        // 获取本次待处理的数据量
         int newBytes = in.readableBytes();
         int totalBytes = oldBytes + newBytes;
         ByteBuf newCumulation = alloc.buffer(alloc.calculateNewCapacity(totalBytes, MAX_VALUE));
         ByteBuf toRelease = newCumulation;
         try {
             // This avoids redundant checks and stack depth compared to calling writeBytes(...)
+            // 将老的堆积区数据全部导入到新的堆积区
             newCumulation.setBytes(0, oldCumulation, oldCumulation.readerIndex(), oldBytes)
-                .setBytes(oldBytes, in, in.readerIndex(), newBytes)
-                .writerIndex(totalBytes);
+                    // 将小碗内的数据 也写入到 新的堆积区内.
+                    .setBytes(oldBytes, in, in.readerIndex(), newBytes)
+                    // 更新写索引 为 totalBytes。
+                    .writerIndex(totalBytes);
+
+            // 更新 小碗byteBuf 的读索引 与 写索引一致，表示 这块 byteBuf 都处理完了..
             in.readerIndex(in.writerIndex());
+
+            // toRelease 指向老的堆积区，后面 finally 会去释放 老的堆积区。
             toRelease = oldCumulation;
             return newCumulation;
         } finally {
